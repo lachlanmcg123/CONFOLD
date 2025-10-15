@@ -40,21 +40,21 @@ class Classifier:
             manual_rules = add_rule(rule, attrs, nums, labels)
             self.rules = self.rules + manual_rules
 
-    def fit(self, data, ratio=0.5):
+    def fit(self, data, ratio=0.5, **kwargs):
         if self.rules == None:
             self.rules = foldrm(data, ratio=ratio)
         elif isinstance(self.rules, list) and len(self.rules)  == 0:
-            self.rules = foldrm(data, ratio=ratio)
+            self.rules = foldrm(data, ratio=ratio, **kwargs)
         else:
-            self.rules = expand_rules(data, existing_rules = self.rules, ratio=ratio)            
+            self.rules = expand_rules(data, existing_rules = self.rules, ratio=ratio, **kwargs)            
 
-    def confidence_fit(self, data, improvement_threshold=0.02, ratio=0.5):
+    def confidence_fit(self, data, improvement_threshold=0.02, ratio=0.5, **kwargs):
         if self.rules == None:
-            self.rules = confidence_foldrm(data, improvement_threshold=improvement_threshold)
+            self.rules = confidence_foldrm(data, improvement_threshold=improvement_threshold, **kwargs)
         elif isinstance(self.rules, list) and len(self.rules)  == 0:
-            self.rules = confidence_foldrm(data, improvement_threshold=improvement_threshold)
+            self.rules = confidence_foldrm(data, improvement_threshold=improvement_threshold, **kwargs)
         else:
-            self.rules = expand_rules(data, existing_rules = self.rules, ratio = 0.5, improvement_threshold = improvement_threshold)
+            self.rules = expand_rules(data, existing_rules = self.rules, ratio = 0.5, improvement_threshold = improvement_threshold, **kwargs)
 
     def predict(self, X):
         predictions_with_confidence = predict(self.rules, X)

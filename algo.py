@@ -162,7 +162,7 @@ def evaluate(item, x):
 
 
 
-def expand_rules(data, existing_rules, ratio=0.5, improvement_threshold = False):
+def expand_rules(data, existing_rules, ratio=0.5, improvement_threshold = False, **kwargs):
     ret = []
     current_data = data
     for rule in existing_rules:
@@ -222,9 +222,9 @@ def expand_rules(data, existing_rules, ratio=0.5, improvement_threshold = False)
         
     #Now that the data has been updated and confidence calculated for existing rules if desired we can fit the residuals
     if improvement_threshold == False:        
-        ret = ret + foldrm(current_data, ratio=ratio)
+        ret = ret + foldrm(current_data, ratio=ratio, **kwargs)
     else:
-        ret = ret + confidence_foldrm(current_data, improvement_threshold = improvement_threshold)
+        ret = ret + confidence_foldrm(current_data, improvement_threshold = improvement_threshold, **kwargs)
     return ret
 
 
@@ -271,15 +271,19 @@ def evaluate_exceptions(rule, data_pos, data_neg, improvement_threshold =0.02):
     return rule
 
 
-def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_literal = False):
+def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_literal = False, **kwargs):
     ret = []
+    
     while len(data) > 0:
+        
         if provided_literal == False:
             target_class = most(data) #takes form -1 '==' label
         else:
             target_class = provided_literal
+
         data_pos, data_neg = split_data_by_item(data, target_class)
-        rule = learn_confidence_rule(data_pos, data_neg, [], improvement_threshold, ratio)
+        
+        rule = learn_confidence_rule(data_pos, data_neg, [], improvement_threshold, ratio, **kwargs)
 
         if len(rule[2]) >= 1:
             rule = evaluate_exceptions(rule, data_pos, data_neg, improvement_threshold)
@@ -289,38 +293,46 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
         confidence = calculate_confidence(tp, total)
         
         data_fn = [data_pos[i] for i in range(len(data_pos)) if not cover(rule, data_pos[i])]
+        
         if len(data_fn) == len(data_pos):
             break
         data_tn = [data_neg[i] for i in range(len(data_neg)) if not cover(rule, data_neg[i])]
         data = data_fn + data_tn
         rule_with_confidence = tuple([target_class]) + rule[1:-1] + (confidence,) # Attach label and confidence to rule
+        
         ret.append(rule_with_confidence) # Append rule with confidence after pruning
-
+    
     return ret
 
-def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5):
+def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, **kwargs):
     items = []
+    
     while True:
-        t = best_item(data_pos, data_neg, used_items + items)
+        t = best_item(data_pos, data_neg, used_items + items, **kwargs)
+    
         items.append(t)
         rule = -1, items, [], 0
+
+        
         data_pos = [data_pos[i] for i in range(len(data_pos)) if cover(rule, data_pos[i])]
         data_neg = [data_neg[i] for i in range(len(data_neg)) if cover(rule, data_neg[i])]
+        
         if t[0] == -1 or len(data_neg) <= ratio*len(data_pos):
             if t[0] == -1:
                 rule = -1, items[:-1], [], 0
+            
             if len(data_neg) > 0 and t[0] != -1:
-                ab = confidence_fold(data_neg, data_pos, used_items + items, improvement_threshold)
+                ab = confidence_fold(data_neg, data_pos, used_items + items, improvement_threshold, **kwargs)
                 if len(ab) > 0:
                     rule = rule[0], rule[1], ab, 0
             break
     return rule
 
 
-def confidence_fold(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5):
+def confidence_fold(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, **kwargs):
     ret = []
     while len(data_pos) > 0:
-        rule = learn_confidence_rule(data_pos, data_neg, used_items, improvement_threshold)
+        rule = learn_confidence_rule(data_pos, data_neg, used_items, improvement_threshold, **kwargs)
 
         data_fn = [data_pos[i] for i in range(len(data_pos)) if not cover(rule, data_pos[i])]
         if len(data_fn) == len(data_pos):
@@ -528,20 +540,74 @@ def cover(item, x):
     return evaluate(item, x)
 
 
-def gain(tp, fn, tn, fp):
-    if tp + tn < fp + fn:
-        return float('-inf')
-    ret = 0
-    tot_p, tot_n = float(tp + fp), float(tn + fn)
-    tot = float(tot_p + tot_n)
-    ret += tp / tot * math.log(tp / tot_p) if tp > 0 else 0
-    ret += fp / tot * math.log(fp / tot_p) if fp > 0 else 0
-    ret += tn / tot * math.log(tn / tot_n) if tn > 0 else 0
-    ret += fn / tot * math.log(fn / tot_n) if fn > 0 else 0
-    return ret
+def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_coverage_weight = 2, beta=1, Z=3):
+    formula = metric
+    k = num_classes
+    if formula == 'information_gain':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        ret = 0
+        tot_p, tot_n = float(tp + fp), float(tn + fn)
+        tot = float(tot_p + tot_n)
+        ret += tp / tot * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / tot * math.log(fp / tot_p) if fp > 0 else 0
+        ret += tn / tot * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / tot * math.log(fn / tot_n) if fn > 0 else 0
+        return ret
+    if formula == 'precision':
+        if tp ==0:
+            return float('-inf')
+        return float(tp)/float(tp+fp)
+    if formula == 'F1':
+        if tp ==0:
+            return float('-inf')
+        return float(2*tp)/(float(2*tp+fp+fn))
+    if formula == 'Jaccard':
+        if tp ==0:
+            return float('-inf')
+        return float(tp)/(float(tp+fp+fn))
+    if formula == 'Laplace':
+        if tp ==0:
+            return float('-inf')
+        return float(tp+1)/(float(tp+fp+k))
+    if formula == 'Gini_Impurity_Covered':
+        if tp ==0:
+            return float('-inf')
+        return float(tp)/(float(tp+fp)**2) - float(fp)/(float(tp+fp)**2)
+    if formula == 'Positive_Coverage_Gain':
+        w = positive_coverage_weight 
+        if tp ==0:
+            return float('-inf')
+        PCG = float(tp - w*fp)
+        return PCG
+    if formula == 'YoudensJ':
+        if tp ==0:
+            return float('-inf')
+        J = float(tp)/float(tp+fn) - float(fp)/float(fp+tn)
+        return J
+    if formula == 'Weighted_Harmonic_Mean': #Weighted Harmonic Mean of coverage and precision
+        if tp ==0:
+            return float('-inf')
+        Precision = float(tp)/float(tp+fp)
+        WHM = (1.0+float(beta)**2) * float(tp) * Precision / (float(beta)**2 * float(tp) + Precision)
+        return WHM
+    if formula == 'Binomial_Parameter': # Uses Wilson Score interval to choose splits which are statistically significant
+        if tp ==0:
+            return float('-inf')
+        BSP = (float(tp) + float(Z)**2/2)/(float(tp + fp) + float(Z)**2) - float(Z)/(float(tp + fp) + float(Z)**2 ) * sqrt(float(tp*fp)/float(tp+fp) + float(Z)**2/4)
+        return BSP
+    if formula == 'RPG':
+        if tp == 0:
+            return float('-inf')
+        RPG = float(tp)/float(tp+fp) - float(tp + fn)/float(tp+tn+fp+fn)
+        return RPG
+    else:
+        raise NotImplementedError(f"Metric: '{metric}' is currently not implemented. Instead use one of 'information_gain', 'precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter' or 'RPG'.")
+        
 
+metric_list = ['information_gain', 'precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG']
 
-def best_ig(data_pos, data_neg, i, used_items=[]):
+def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
     xp, xn, cp, cn = 0, 0, 0, 0
     pos, neg = dict(), dict()
     xs, cs = set(), set()
@@ -575,25 +641,25 @@ def best_ig(data_pos, data_neg, i, used_items=[]):
     for x in xs:
         if (i, '<=', x) in used_items or (i, '>', x) in used_items:
             continue
-        ig = gain(pos[x], xp - pos[x] + cp, xn - neg[x] + cn, neg[x])
+        ig = gain(pos[x], xp - pos[x] + cp, xn - neg[x] + cn, neg[x], **kwargs)
         if best < ig:
             best, v, r = ig, x, '<='
-        ig = gain(xp - pos[x], pos[x] + cp, neg[x] + cn, xn - neg[x])
+        ig = gain(xp - pos[x], pos[x] + cp, neg[x] + cn, xn - neg[x], **kwargs)
         if best < ig:
             best, v, r = ig, x, '>'
     for c in cs:
         if (i, '==', c) in used_items or (i, '!=', c) in used_items:
             continue
-        ig = gain(pos[c], cp - pos[c] + xp, cn - neg[c] + xn, neg[c])
+        ig = gain(pos[c], cp - pos[c] + xp, cn - neg[c] + xn, neg[c], **kwargs)
         if best < ig:
             best, v, r = ig, c, '=='
-        ig = gain(cp - pos[c] + xp, pos[c], neg[c], cn - neg[c] + xn)
+        ig = gain(cp - pos[c] + xp, pos[c], neg[c], cn - neg[c] + xn, **kwargs)
         if best < ig:
             best, v, r = ig, c, '!='
     return best, r, v
 
 
-def best_item(X_pos, X_neg, used_items=[]):
+def best_item(X_pos, X_neg, used_items=[], **kwargs):
     ret = -1, '', ''
     if len(X_pos) == 0 and len(X_neg) == 0:
         return ret
@@ -618,7 +684,8 @@ def most(data, i=-1):
         if n <= tab[t]:
             y, n = t, tab[t]
     return i, '==', y #returns  -1 '==' most common label
-def foldrm(data, ratio=0.5, provided_literal = False):
+
+def foldrm(data, ratio=0.5, provided_literal = False, **kwargs):
     ret = []
     while len(data) > 0:
         if provided_literal == False: #Determines which class to be evaluated next
@@ -626,7 +693,7 @@ def foldrm(data, ratio=0.5, provided_literal = False):
         else:
             target_class = provided_literal
         data_pos, data_neg = split_data_by_item(data, target_class) #Splits data into positive and negative examples according to chosen class
-        rule = learn_rule(data_pos, data_neg, [], ratio)
+        rule = learn_rule(data_pos, data_neg, [], ratio, **kwargs)
         # Calculate confidence here
         tp = len([d for d in data_pos if cover(rule, d)])  # True positives
         total = tp + len([d for d in data_neg if cover(rule, d)])  # Total = TP + FP
@@ -641,10 +708,10 @@ def foldrm(data, ratio=0.5, provided_literal = False):
         ret.append(rule_with_confidence)  # Append rule with confidence
     return ret
 
-def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5):
+def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5, **kwargs):
     items = []
     while True:
-        t = best_item(data_pos, data_neg, used_items + items)
+        t = best_item(data_pos, data_neg, used_items + items, **kwargs)
         items.append(t)
         rule = -1, items, [], 0
         data_pos = [data_pos[i] for i in range(len(data_pos)) if cover(rule, data_pos[i])]
@@ -653,17 +720,17 @@ def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5):
             if t[0] == -1:
                 rule = -1, items[:-1], [], 0
             if len(data_neg) > 0 and t[0] != -1:
-                ab = fold(data_neg, data_pos, used_items + items, ratio)
+                ab = fold(data_neg, data_pos, used_items + items, ratio, **kwargs)
                 if len(ab) > 0:
                     rule = rule[0], rule[1], ab, 0
             break
     return rule
 
 
-def fold(data_pos, data_neg, used_items=[], ratio=0.5):
+def fold(data_pos, data_neg, used_items=[], ratio=0.5, **kwargs):
     ret = []
     while len(data_pos) > 0:
-        rule = learn_rule(data_pos, data_neg, used_items, ratio)
+        rule = learn_rule(data_pos, data_neg, used_items, ratio, **kwargs)
         data_fn = [data_pos[i] for i in range(len(data_pos)) if not cover(rule, data_pos[i])]
         if len(data_fn) == len(data_pos):
             break
@@ -712,6 +779,7 @@ def flatten_rules(rules):
         _func(r, root=True)
     final_output = ret + abrules
     return final_output
+
 def justify(rs, x, idx=-1, pos=[]):
     for j in range(len(rs)):
         r = rs[j]
