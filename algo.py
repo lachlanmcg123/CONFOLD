@@ -1,6 +1,22 @@
 import math, re, copy
 from scipy.stats import binom
 
+def _summarize_counts(items, data_pos, data_neg):
+    """Return TP, FP, TN, FN for the current literal set (items)."""
+    rule = (-1, list(items), [], 0)
+    tp = sum(1 for d in data_pos if cover(rule, d))
+    fp = sum(1 for d in data_neg if cover(rule, d))
+    fn = len(data_pos) - tp
+    tn = len(data_neg) - fp
+    return tp, fp, tn, fn
+
+def _iname(i, attrs):
+    try:
+        return attrs[i]
+    except Exception:
+        return f"col_{i}"
+
+
 def prune_rules(rules, confidence=0.75):
     # Keep rules with confidence greater than threshold (0.75) and prune others
     pruned_rules = []
@@ -542,6 +558,9 @@ def cover(item, x):
 
 def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_coverage_weight = 2, beta=1, Z=3):
     formula = metric
+    debug = False
+    if debug:
+        print(metric)
     k = num_classes
     if formula == 'information_gain':
         if tp + tn < fp + fn:
@@ -554,7 +573,7 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
         ret += tn / tot * math.log(tn / tot_n) if tn > 0 else 0
         ret += fn / tot * math.log(fn / tot_n) if fn > 0 else 0
         return ret
-    if formula == 'precision':
+    if formula == 'Precision':
         if tp ==0:
             return float('-inf')
         return float(tp)/float(tp+fp)
@@ -583,6 +602,8 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
     if formula == 'YoudensJ':
         if tp ==0:
             return float('-inf')
+        if tn ==0:
+            return float('-inf')
         J = float(tp)/float(tp+fn) - float(fp)/float(fp+tn)
         return J
     if formula == 'Weighted_Harmonic_Mean': #Weighted Harmonic Mean of coverage and precision
@@ -594,7 +615,7 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
     if formula == 'Binomial_Parameter': # Uses Wilson Score interval to choose splits which are statistically significant
         if tp ==0:
             return float('-inf')
-        BSP = (float(tp) + float(Z)**2/2)/(float(tp + fp) + float(Z)**2) - float(Z)/(float(tp + fp) + float(Z)**2 ) * sqrt(float(tp*fp)/float(tp+fp) + float(Z)**2/4)
+        BSP = (float(tp) + float(Z)**2/2)/(float(tp + fp) + float(Z)**2) - float(Z)/(float(tp + fp) + float(Z)**2 ) * math.sqrt(float(tp*fp)/float(tp+fp) + float(Z)**2/4)
         return BSP
     if formula == 'RPG':
         if tp == 0:
@@ -605,9 +626,10 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
         raise NotImplementedError(f"Metric: '{metric}' is currently not implemented. Instead use one of 'information_gain', 'precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter' or 'RPG'.")
         
 
-metric_list = ['information_gain', 'precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG']
+metric_list = ['information_gain', 'Precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG']
 
 def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
+    debug=False
     xp, xn, cp, cn = 0, 0, 0, 0
     pos, neg = dict(), dict()
     xs, cs = set(), set()
@@ -644,18 +666,26 @@ def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
         ig = gain(pos[x], xp - pos[x] + cp, xn - neg[x] + cn, neg[x], **kwargs)
         if best < ig:
             best, v, r = ig, x, '<='
+            if debug:
+                print(f"New best split found, <={v=}, metric={ig}, {x=}")
         ig = gain(xp - pos[x], pos[x] + cp, neg[x] + cn, xn - neg[x], **kwargs)
         if best < ig:
             best, v, r = ig, x, '>'
+            if debug:
+                print(f"New best split found, {best=}, >{v=}, metric={ig}, {x=}")
     for c in cs:
         if (i, '==', c) in used_items or (i, '!=', c) in used_items:
             continue
         ig = gain(pos[c], cp - pos[c] + xp, cn - neg[c] + xn, neg[c], **kwargs)
         if best < ig:
             best, v, r = ig, c, '=='
+            if debug:
+                print(f"New best split found, relation={r} {v=}, metric={ig},")
         ig = gain(cp - pos[c] + xp, pos[c], neg[c], cn - neg[c] + xn, **kwargs)
         if best < ig:
             best, v, r = ig, c, '!='
+            if debug:
+                print(f"New best split found, relation={r} {v=}, metric={ig},")
     return best, r, v
 
 
@@ -666,7 +696,7 @@ def best_item(X_pos, X_neg, used_items=[], **kwargs):
     n = len(X_pos[0]) if len(X_pos) > 0 else len(X_neg[0])
     best = float('-inf')
     for i in range(n - 1):
-        ig, r, v = best_ig(X_pos, X_neg, i, used_items)
+        ig, r, v = best_ig(X_pos, X_neg, i, used_items, **kwargs)
         if best < ig:
             best = ig
             ret = i, r, v #column index, relation, value

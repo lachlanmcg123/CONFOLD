@@ -24,109 +24,9 @@ def get_inverse_brier_score(Ystar_tuples, Y_test):
     Inverse_Brier_score = 1 - Brier_score
     return Inverse_Brier_score
 
-def zip_rule(rule):
-    tab, dft = {}, []
-    # Extract the confidence value from the rule
-    confidence = rule[-1]  # Confidence is the last element of the rule tuple
 
-    for i in rule[1]:  # Iterate over the conditions
-        if isinstance(i[2], str):  # Handle categorical attributes
-            dft.append(i)
-        else:  # Handle numeric attributes
-            if i[0] not in tab:
-                tab[i[0]] = []
-            if i[1] == '<=':
-                tab[i[0]].append([float('-inf'), i[2]])
-            else:  # Assume '>' operator
-                tab[i[0]].append([i[2], float('inf')])
 
-    nums = [t for t in tab]
-    nums.sort()
-    for i in nums:
-        left, right = float('inf'), float('-inf')
-        for j in tab[i]:
-            if j[0] == float('-inf'):
-                left = min(left, j[1])
-            else:
-                right = max(right, j[0])
-        if left == float('inf'):
-            dft.append((i, '>', right))
-        elif right == float('-inf'):
-            dft.append((i, '<=', left))
-        else:
-            dft.append((i, '>', right))
-            dft.append((i, '<=', left))
 
-    # Return the updated rule structure, now including the confidence value
-    transformed_rule = rule[0], dft, rule[2], confidence
-    return rule[0], dft, rule[2], confidence
-
-def decode_rules(rules, attrs, x=None):
-    ret = []
-    nr = {'<=': '>', '>': '<=', '==': '!=', '!=': '=='}
-
-    def _f1(it):
-        prefix, not_prefix = '', ''
-        if isinstance(it, tuple) and len(it) == 3:
-            if x is not None:
-                if it[0] == -1:
-                    prefix = '[T]' if justify(rules, x)[0] == it[2] else '[F]'
-                else:
-                    prefix = '[T]' if evaluate(it, x) else '[F]'
-                not_prefix = '[T]' if prefix == '[F]' else '[F]'
-            i, r, v = it[0], it[1], it[2]
-            if i < -1:
-                i = -i - 2
-                r = nr[r]
-            k = attrs[i].lower().replace(' ', '_')
-            if isinstance(v, str):
-                v = v.lower().replace(' ', '_')
-                v = 'null' if len(v) == 0 else '\'' + v + '\''
-            if r == '==':
-                return prefix + k + '(X,' + v + ')'
-            elif r == '!=':
-                return 'not ' + not_prefix + k + '(X,' + v + ')'
-            else:
-                return prefix + k + '(X,' + 'N' + str(i) + ')' + ', N' + str(i) + r + str(round(v, 5))
-        elif it == -1:
-            pass
-        else:
-            if x is not None:
-                if it not in [r[0] for r in rules]:
-                    prefix = '[U]'
-                else:
-                    prefix = '[T]' if justify(rules, x, it)[0] else '[F]'
-                    pass
-            if it < -1:
-                return prefix + 'ab' + str(abs(it) - 1) + '(X)'
-            else:
-                return prefix + 'rule' + str(abs(it)) + '(X)'
-    
-    def _f2(rule):
-        head = _f1(rule[0])
-        body_elements = [ _f1(i) for i in list(rule[1]) ]
-        tail_elements = [ _f1(i) for i in list(rule[2]) ]
-        
-        # Ensure body elements are concatenated with commas
-        body = ', '.join(body_elements)
-        # Ensure tail elements are concatenated with ', not ' if they are present
-        tail = ', not '.join(tail_elements) if tail_elements else ''
-        # Add 'not ' prefix to the tail if it's not empty
-        tail = 'not ' + tail if tail else tail
-    
-        # Concatenate head, body, and tail with proper syntax
-        rule_str = f"{head} :- {body}" + (f", {tail}" if tail else "") + "."
-    
-        # Append confidence if present
-        confidence = rule[-1] if isinstance(rule[-1], (float, int)) else None
-        confidence_str = f" [confidence: {round(confidence, 5)}]" if confidence else ""
-        rule_str += confidence_str
-    
-        return rule_str
-
-    for _r in rules:
-        ret.append(_f2(_r))
-    return ret
 
 
 
@@ -435,6 +335,108 @@ def justify_data(frs, x, attrs):
                 ret.append(attrs[j[0]] + ': ' + str(x[j[0]]))
     return set(ret)
 
+
+def decode_rules(rules, attrs, x=None):
+    ret = []
+    nr = {'<=': '>', '>': '<=', '==': '!=', '!=': '=='}
+
+    def _f1(it):
+        prefix, not_prefix = '', ''
+        if isinstance(it, tuple) and len(it) == 3:
+            if x is not None:
+                if it[0] == -1:
+                    prefix = '[T]' if justify(rules, x)[0] == it[2] else '[F]'
+                else:
+                    prefix = '[T]' if evaluate(it, x) else '[F]'
+                not_prefix = '[T]' if prefix == '[F]' else '[F]'
+            i, r, v = it[0], it[1], it[2]
+            if i < -1:
+                i = -i - 2
+                r = nr[r]
+            k = attrs[i].lower().replace(' ', '_')
+            if isinstance(v, str):
+                v = v.lower().replace(' ', '_')
+                v = 'null' if len(v) == 0 else '\'' + v + '\''
+            if r == '==':
+                return prefix + k + '(X,' + v + ')'
+            elif r == '!=':
+                return 'not ' + not_prefix + k + '(X,' + v + ')'
+            else:
+                return prefix + k + '(X,' + 'N' + str(i) + ')' + ', N' + str(i) + r + str(round(v, 5))
+        elif it == -1:
+            pass
+        else:
+            if x is not None:
+                if it not in [r[0] for r in rules]:
+                    prefix = '[U]'
+                else:
+                    prefix = '[T]' if justify(rules, x, it)[0] else '[F]'
+                    pass
+            if it < -1:
+                return prefix + 'ab' + str(abs(it) - 1) + '(X)'
+            else:
+                return prefix + 'rule' + str(abs(it)) + '(X)'
+    
+    def _f2(rule):
+        head = _f1(rule[0])
+        body_elements = [ _f1(i) for i in list(rule[1]) ]
+        tail_elements = [ _f1(i) for i in list(rule[2]) ]
+        
+        # Ensure body elements are concatenated with commas
+        body = ', '.join(body_elements)
+        # Ensure tail elements are concatenated with ', not ' if they are present
+        tail = ', not '.join(tail_elements) if tail_elements else ''
+        # Add 'not ' prefix to the tail if it's not empty
+        tail = 'not ' + tail if tail else tail
+    
+        # Concatenate head, body, and tail with proper syntax
+        rule_str = f"{head} :- {body}" + (f", {tail}" if tail else "") + "."
+    
+        # Append confidence if present
+        confidence = rule[-1] if isinstance(rule[-1], (float, int)) else None
+        confidence_str = f" [confidence: {round(confidence, 5)}]" if confidence else ""
+        rule_str += confidence_str
+    
+        return rule_str
+
+    for _r in rules:
+        ret.append(_f2(_r))
+    return ret
+def zip_rule(rule):
+    tab, dft = {}, []
+    # Extract the confidence value from the rule
+    confidence = rule[-1]  # Confidence is the last element of the rule tuple
+
+    for i in rule[1]:  # Iterate over the conditions
+        if isinstance(i[2], str):  # Handle categorical attributes
+            dft.append(i)
+        else:  # Handle numeric attributes
+            if i[0] not in tab:
+                tab[i[0]] = []
+            if i[1] == '<=':
+                tab[i[0]].append([float('-inf'), i[2]])
+            else:  # Assume '>' operator
+                tab[i[0]].append([i[2], float('inf')])
+
+    nums = [t for t in tab]
+    nums.sort()
+    for i in nums:
+        left, right = float('inf'), float('-inf')
+        for j in tab[i]:
+            if j[0] == float('-inf'):
+                left = min(left, j[1])
+            else:
+                right = max(right, j[0])
+        if left == float('inf'):
+            dft.append((i, '>', right))
+        elif right == float('-inf'):
+            dft.append((i, '<=', left))
+        else:
+            dft.append((i, '>', right))
+            dft.append((i, '<=', left))
+    # Return the updated rule structure, now including the confidence value
+    transformed_rule = rule[0], dft, rule[2], confidence
+    return rule[0], dft, rule[2], confidence
 
 def simplify_rule(rule):
     head, body = rule.split(' :- ')
