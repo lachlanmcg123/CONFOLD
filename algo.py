@@ -291,7 +291,7 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
     ret = []
     
     while len(data) > 0:
-        
+        ###FIX this is the greedy part that will need to be fixed for the second solution. 
         if provided_literal == False:
             target_class = most(data) #takes form -1 '==' label
         else:
