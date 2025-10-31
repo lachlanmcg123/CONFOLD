@@ -300,7 +300,7 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
         data_pos, data_neg = split_data_by_item(data, target_class)
         
         rule = learn_confidence_rule(data_pos, data_neg, [], improvement_threshold, ratio, **kwargs)
-
+     
         if len(rule[2]) >= 1:
             rule = evaluate_exceptions(rule, data_pos, data_neg, improvement_threshold)
 
@@ -322,7 +322,7 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
 
 def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, **kwargs):
     items = []
-    
+    debug = True
     while True:
         t = best_item(data_pos, data_neg, used_items + items, **kwargs)
     
@@ -342,6 +342,8 @@ def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_thresho
                 if len(ab) > 0:
                     rule = rule[0], rule[1], ab, 0
             break
+    if debug:
+        print(f"\n\n The new rule found is: {rule} \n\n")
     return rule
 
 
@@ -560,7 +562,7 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
     formula = metric
     debug = False
     if debug:
-        print(metric)
+        print(f"{metric=}, {tp=}, {fp=}, {fn}, {tn}")
     k = num_classes
     if formula == 'information_gain':
         if tp + tn < fp + fn:
@@ -629,7 +631,7 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
 metric_list = ['information_gain', 'Precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG']
 
 def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
-    debug=False
+    debug=True
     xp, xn, cp, cn = 0, 0, 0, 0
     pos, neg = dict(), dict()
     xs, cs = set(), set()
@@ -667,12 +669,12 @@ def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
         if best < ig:
             best, v, r = ig, x, '<='
             if debug:
-                print(f"New best split found, <={v=}, metric={ig}, {x=}")
+                print(f"New best split found, <={v=}, metric={ig}, {x=}, tp={pos[x]}, fn={xp - pos[x] + cp}, tn={xn -neg[x] + cn}, fp={neg[x]}")
         ig = gain(xp - pos[x], pos[x] + cp, neg[x] + cn, xn - neg[x], **kwargs)
         if best < ig:
             best, v, r = ig, x, '>'
             if debug:
-                print(f"New best split found, {best=}, >{v=}, metric={ig}, {x=}")
+                print(f"New best split found, <={v=}, metric={ig}, {x=}, tp={xp - pos[x]}, fn={pos[x] + cp}, tn={neg[x] + cn}, fp={xn - neg[x]}")
     for c in cs:
         if (i, '==', c) in used_items or (i, '!=', c) in used_items:
             continue
@@ -680,12 +682,12 @@ def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
         if best < ig:
             best, v, r = ig, c, '=='
             if debug:
-                print(f"New best split found, relation={r} {v=}, metric={ig},")
+                print(f"New best split found, <={v=}, metric={ig}, tp={pos[c]}, fn={cp -pos[c] +xp}, tn={cn-neg[c] +xn}, fp={neg[c]}")
         ig = gain(cp - pos[c] + xp, pos[c], neg[c], cn - neg[c] + xn, **kwargs)
         if best < ig:
             best, v, r = ig, c, '!='
             if debug:
-                print(f"New best split found, relation={r} {v=}, metric={ig},")
+                print(f"New best split found, relation={r} {v=}, metric={ig}, tp={cp- pos[c]+xp}, fn={pos[c]}, tn={neg[c]}, fp={cn-neg[c] +xn}")
     return best, r, v
 
 
@@ -716,6 +718,8 @@ def most(data, i=-1):
     return i, '==', y #returns  -1 '==' most common label
 
 def foldrm(data, ratio=0.5, provided_literal = False, **kwargs):
+    debug = False
+    
     ret = []
     while len(data) > 0:
         if provided_literal == False: #Determines which class to be evaluated next
@@ -736,9 +740,12 @@ def foldrm(data, ratio=0.5, provided_literal = False, **kwargs):
         data_tn = [data_neg[i] for i in range(len(data_neg)) if not cover(rule, data_neg[i])]
         data = data_fn + data_tn
         ret.append(rule_with_confidence)  # Append rule with confidence
+        if debug:
+            print(f"\n\n The new rule found is: {rule_with_confidence} \n\n")
     return ret
 
 def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5, **kwargs):
+    debug = True
     items = []
     while True:
         t = best_item(data_pos, data_neg, used_items + items, **kwargs)
@@ -754,6 +761,8 @@ def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5, **kwargs):
                 if len(ab) > 0:
                     rule = rule[0], rule[1], ab, 0
             break
+    if debug:
+        print(f"The new rule to be learned is {rule}")
     return rule
 
 
