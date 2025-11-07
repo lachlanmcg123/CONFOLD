@@ -178,7 +178,7 @@ def evaluate(item, x):
 
 
 
-def expand_rules(data, existing_rules, ratio=0.5, improvement_threshold = False, **kwargs):
+def expand_rules(data, existing_rules, ratio=0.5, improvement_threshold = False, selection_strategy='greedy', **kwargs):
     ret = []
     current_data = data
     for rule in existing_rules:
@@ -238,9 +238,9 @@ def expand_rules(data, existing_rules, ratio=0.5, improvement_threshold = False,
         
     #Now that the data has been updated and confidence calculated for existing rules if desired we can fit the residuals
     if improvement_threshold == False:        
-        ret = ret + foldrm(current_data, ratio=ratio, **kwargs)
+        ret = ret + foldrm(current_data, ratio=ratio, selection_strategy=selection_strategy, **kwargs)
     else:
-        ret = ret + confidence_foldrm(current_data, improvement_threshold = improvement_threshold, **kwargs)
+        ret = ret + confidence_foldrm(current_data, improvement_threshold = improvement_threshold, selection_strategy=selection_strategy, **kwargs)
     return ret
 
 
@@ -287,13 +287,102 @@ def evaluate_exceptions(rule, data_pos, data_neg, improvement_threshold =0.02):
     return rule
 
 
-def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_literal = False, **kwargs):
+def get_class_counts(data, i=-1):
+    """Gets counts for all classes in the dataset."""
+    counts = dict()
+    for d in data:
+        label = d[i]
+        if label not in counts:
+            counts[label] = 0
+        counts[label] += 1
+    return counts
+
+def calculate_entropy(data, i=-1):
+    """Calculates the entropy of a dataset based on class labels."""
+    if not data:
+        return 0
+    total_samples = len(data)
+    counts = get_class_counts(data, i)
+    entropy = 0.0
+    for label in counts:
+        probability = counts[label] / total_samples
+        entropy -= probability * math.log2(probability)
+    return entropy
+
+def get_unique_classes(data, i=-1):
+    """Gets a list of unique classes from the data."""
+    return list(set(d[i] for d in data))
+
+
+
+def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_literal = False, selection_strategy='greedy', **kwargs):
     ret = []
+    class_order = []
+    current_class_idx = 0
+    if selection_strategy == 'round_robin':
+        initial_counts = get_class_counts(data)
+        # Sort classes by frequency, smallest first, to create a pre-determined order
+        class_order = sorted(initial_counts, key=initial_counts.get)
     
     while len(data) > 0:
-        ###FIX this is the greedy part that will need to be fixed for the second solution. 
+
+        #Round Robin, starts with smallest class
         if provided_literal == False:
-            target_class = most(data) #takes form -1 '==' label
+            unique_classes_in_data = get_unique_classes(data)
+            if len(unique_classes_in_data) == 1:
+                # If only one class is left, we must choose it
+                target_class = (-1, '==', unique_classes_in_data[0])
+            elif selection_strategy == 'round_robin':
+                found_class = False
+                # Loop a maximum of len(class_order) times to prevent an infinite loop
+                for _ in range(len(class_order)):
+                    potential_class_label = class_order[current_class_idx]
+                    if potential_class_label in unique_classes_in_data:
+                        target_class = (-1, '==', potential_class_label)
+                        found_class = True
+                        # Move to the next class for the *next* iteration of the main while loop
+                        current_class_idx = (current_class_idx + 1) % len(class_order)
+                        break # Exit the for loop
+                    
+                    # If not found, advance the index to try the next class in the order
+                    current_class_idx = (current_class_idx + 1) % len(class_order)
+                
+                if not found_class:
+                    # Fallback if no class from the order is present in the current data subset
+                    target_class = most(data)
+            
+            elif selection_strategy == 'best_rule':
+                # Lookahead to see which class yields the best initial rule
+                best_class_label = None
+                best_class_gain = float('-inf')
+                for class_label in unique_classes_in_data:
+                    temp_target = (-1, '==', class_label)
+                    d_pos, d_neg = split_data_by_item(data, temp_target)
+                    # Find the gain of the single best split for this class
+                    ig, _, _ = best_item(d_pos, d_neg, [], **kwargs)
+                    if ig > best_class_gain:
+                        best_class_gain = ig
+                        best_class_label = class_label
+                target_class = (-1, '==', best_class_label)
+
+            
+            elif selection_strategy == 'info_gain':
+                # Choose the class that minimizes the weighted entropy of the 'other' classes
+                best_class_label = None
+                min_weighted_entropy = float('inf')
+                total_len = len(data)
+                for class_label in unique_classes_in_data:
+                    temp_target = (-1, '==', class_label)
+                    _, d_neg = split_data_by_item(data, temp_target)
+                    # The entropy of the positive set is 0. We only need to evaluate the negative set.
+                    weighted_entropy = (len(d_neg) / total_len) * calculate_entropy(d_neg)
+                    if weighted_entropy < min_weighted_entropy:
+                        min_weighted_entropy = weighted_entropy
+                        best_class_label = class_label
+                target_class = (-1, '==', best_class_label)
+            
+            else: # Default to 'greedy' (largest remaining class)
+                target_class = most(data)
         else:
             target_class = provided_literal
 
@@ -595,6 +684,10 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
         if tp ==0:
             return float('-inf')
         return float(tp)/(float(tp+fp)**2) - float(fp)/(float(tp+fp)**2)
+    if formula == 'Gini_Impurity':
+        if tp ==0:
+            return float('-inf')
+        return float(tp)/(float(tp+fp)**2) + float(fp)/(float(tp+fp)**2) #As we are trying to maximise we have removed the 1-
     if formula == 'Positive_Coverage_Gain':
         w = positive_coverage_weight 
         if tp ==0:
@@ -717,15 +810,71 @@ def most(data, i=-1):
             y, n = t, tab[t]
     return i, '==', y #returns  -1 '==' most common label
 
-def foldrm(data, ratio=0.5, provided_literal = False, **kwargs):
+def foldrm(data, ratio=0.5, provided_literal = False, selection_strategy='greedy', **kwargs):
     debug = False
+    class_order = []
+    current_class_idx = 0
+    if selection_strategy == 'round_robin':
+        initial_counts = get_class_counts(data)
+        # Sort classes by frequency, smallest first, to create a pre-determined order
+        class_order = sorted(initial_counts, key=initial_counts.get)
     
     ret = []
     while len(data) > 0:
-        if provided_literal == False: #Determines which class to be evaluated next
-            target_class = most(data) #takes form -1 '==' label
+        if provided_literal == False:
+            unique_classes_in_data = get_unique_classes(data)
+            if len(unique_classes_in_data) == 1:
+                target_class = (-1, '==', unique_classes_in_data[0])
+            
+            elif selection_strategy == 'round_robin':
+                found_class = False
+                # Loop a maximum of len(class_order) times to prevent an infinite loop
+                for _ in range(len(class_order)):
+                    potential_class_label = class_order[current_class_idx]
+                    if potential_class_label in unique_classes_in_data:
+                        target_class = (-1, '==', potential_class_label)
+                        found_class = True
+                        # Move to the next class for the *next* iteration of the main while loop
+                        current_class_idx = (current_class_idx + 1) % len(class_order)
+                        break # Exit the for loop
+                    
+                    # If not found, advance the index to try the next class in the order
+                    current_class_idx = (current_class_idx + 1) % len(class_order)
+                
+                if not found_class:
+                    # Fallback if no class from the order is present in the current data subset
+                    target_class = most(data)
+
+            
+            elif selection_strategy == 'best_rule':
+                best_class_label = None
+                best_class_gain = float('-inf')
+                for class_label in unique_classes_in_data:
+                    temp_target = (-1, '==', class_label)
+                    d_pos, d_neg = split_data_by_item(data, temp_target)
+                    ig, _, _ = best_item(d_pos, d_neg, [], **kwargs)
+                    if ig > best_class_gain:
+                        best_class_gain = ig
+                        best_class_label = class_label
+                target_class = (-1, '==', best_class_label)
+            elif selection_strategy == 'info_gain':
+                best_class_label = None
+                min_weighted_entropy = float('inf')
+                total_len = len(data)
+                for class_label in unique_classes_in_data:
+                    temp_target = (-1, '==', class_label)
+                    _, d_neg = split_data_by_item(data, temp_target)
+                    weighted_entropy = (len(d_neg) / total_len) * calculate_entropy(d_neg)
+                    if weighted_entropy < min_weighted_entropy:
+                        min_weighted_entropy = weighted_entropy
+                        best_class_label = class_label
+                target_class = (-1, '==', best_class_label)
+            else: # Default to 'greedy'
+                target_class = most(data)
         else:
             target_class = provided_literal
+
+        
         data_pos, data_neg = split_data_by_item(data, target_class) #Splits data into positive and negative examples according to chosen class
         rule = learn_rule(data_pos, data_neg, [], ratio, **kwargs)
         # Calculate confidence here

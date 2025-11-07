@@ -40,21 +40,21 @@ class Classifier:
             manual_rules = add_rule(rule, attrs, nums, labels)
             self.rules = self.rules + manual_rules
 
-    def fit(self, data, ratio=0.5, **kwargs):
+    def fit(self, data, ratio=0.5, selection_strategy='greedy', **kwargs):
         if self.rules == None:
-            self.rules = foldrm(data, ratio=ratio)
+            self.rules = foldrm(data, ratio=ratio, selection_strategy=selection_strategy)
         elif isinstance(self.rules, list) and len(self.rules)  == 0:
-            self.rules = foldrm(data, ratio=ratio, **kwargs)
+            self.rules = foldrm(data, ratio=ratio, selection_strategy=selection_strategy, **kwargs)
         else:
-            self.rules = expand_rules(data, existing_rules = self.rules, ratio=ratio, **kwargs)            
+            self.rules = expand_rules(data, existing_rules = self.rules, ratio=ratio, selection_strategy=selection_strategy, **kwargs)          
 
-    def confidence_fit(self, data, improvement_threshold=0.02, ratio=0.5, **kwargs):
+    def confidence_fit(self, data, improvement_threshold=0.02, ratio=0.5, selection_strategy='greedy', **kwargs):
         if self.rules == None:
-            self.rules = confidence_foldrm(data, improvement_threshold=improvement_threshold, **kwargs)
+            self.rules = confidence_foldrm(data, improvement_threshold=improvement_threshold, selection_strategy=selection_strategy, **kwargs)
         elif isinstance(self.rules, list) and len(self.rules)  == 0:
-            self.rules = confidence_foldrm(data, improvement_threshold=improvement_threshold, **kwargs)
+            self.rules = confidence_foldrm(data, improvement_threshold=improvement_threshold, selection_strategy=selection_strategy, **kwargs)
         else:
-            self.rules = expand_rules(data, existing_rules = self.rules, ratio = 0.5, improvement_threshold = improvement_threshold, **kwargs)
+            self.rules = expand_rules(data, existing_rules = self.rules, ratio = 0.5, improvement_threshold = improvement_threshold, selection_strategy=selection_strategy, **kwargs)
 
     def predict(self, X):
         predictions_with_confidence = predict(self.rules, X)
