@@ -355,11 +355,18 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
                 # Lookahead to see which class yields the best initial rule
                 best_class_label = None
                 best_class_gain = float('-inf')
+                
+                # Fallback in case no class produces a valid split
+                if unique_classes_in_data:
+                    best_class_label = unique_classes_in_data[0]
+    
                 for class_label in unique_classes_in_data:
                     temp_target = (-1, '==', class_label)
                     d_pos, d_neg = split_data_by_item(data, temp_target)
-                    # Find the gain of the single best split for this class
-                    ig, _, _ = best_item(d_pos, d_neg, [], **kwargs)
+                    
+                    # CORRECTED: Call the new function to get the actual gain
+                    ig, _ = find_best_split_and_gain(d_pos, d_neg, [], **kwargs)
+                    
                     if ig > best_class_gain:
                         best_class_gain = ig
                         best_class_label = class_label
@@ -647,22 +654,32 @@ def cover(item, x):
     return evaluate(item, x)
 
 
-def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_coverage_weight = 2, beta=1, Z=3):
+def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_weight = 2, beta=1, Z=3):
     formula = metric
     debug = False
     if debug:
         print(f"{metric=}, {tp=}, {fp=}, {fn}, {tn}")
     k = num_classes
-    if formula == 'information_gain':
+    tot_p, tot_n = float(tp + fp), float(tn + fn)
+    tot = float(tot_p + tot_n)
+        
+    if formula == 'original':
         if tp + tn < fp + fn:
             return float('-inf')
         ret = 0
-        tot_p, tot_n = float(tp + fp), float(tn + fn)
-        tot = float(tot_p + tot_n)
         ret += tp / tot * math.log(tp / tot_p) if tp > 0 else 0
         ret += fp / tot * math.log(fp / tot_p) if fp > 0 else 0
         ret += tn / tot * math.log(tn / tot_n) if tn > 0 else 0
         ret += fn / tot * math.log(fn / tot_n) if fn > 0 else 0
+        return ret
+    if formula == 'information_gain':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        ret = 0
+        ret += tp / tot_p * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / tot_p * math.log(fp / tot_p) if fp > 0 else 0
+        ret += tn / tot_n * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / tot_n * math.log(fn / tot_n) if fn > 0 else 0
         return ret
     if formula == 'Precision':
         if tp ==0:
@@ -684,10 +701,10 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
         if tp ==0:
             return float('-inf')
         return float(tp)/(float(tp+fp)**2) - float(fp)/(float(tp+fp)**2)
-    if formula == 'Gini_Impurity':
-        if tp ==0:
-            return float('-inf')
-        return float(tp)/(float(tp+fp)**2) + float(fp)/(float(tp+fp)**2) #As we are trying to maximise we have removed the 1-
+    #if formula == 'Gini_Impurity':
+    #    if tp ==0:
+    #        return float('-inf')
+    #    return float(tp)/(float(tp+fp)**2) + float(fp)/(float(tp+fp)**2) #As we are trying to maximise we have removed the 1-
     if formula == 'Positive_Coverage_Gain':
         w = positive_coverage_weight 
         if tp ==0:
@@ -717,11 +734,46 @@ def gain(tp, fn, tn, fp, metric='information_gain', num_classes=2, positive_cove
             return float('-inf')
         RPG = float(tp)/float(tp+fp) - float(tp + fn)/float(tp+tn+fp+fn)
         return RPG
+    if formula == 'Gini_Impurity':
+        if tot_p==0 or tot_n==0:
+            return 0
+        Gini = tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n)
+        return Gini
+    if formula == 'Precision_Information_Gain':
+        if tot_p==0 or tot_n==0:
+            return 0
+        ret = 0
+        ret += tp / tot_p * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / tot_p * math.log(fp / tot_p) if fp > 0 else 0
+        ret += tn / tot_n * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / tot_n * math.log(fn / tot_n) if fn > 0 else 0
+        PIG = tp/(tp+fp)*(ret)
+        return PIG
+    if formula == 'Precision_Gini_Impurity':
+        if tot_p==0 or tot_n==0:
+            return 0
+        PGI = tp/(tp+fp)*(tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n))
+        return PGI
+    if formula == 'TP_Information_Gain':
+        if tot_p==0 or tot_n==0:
+            return 0
+        ret = 0
+        ret += tp / tot_p * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / tot_p * math.log(fp / tot_p) if fp > 0 else 0
+        ret += tn / tot_n * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / tot_n * math.log(fn / tot_n) if fn > 0 else 0
+        PIG = tp*(ret)
+        return PIG
+    if formula == 'TP_Gini_Impurity':
+        if tot_p==0 or tot_n==0:
+            return 0
+        PGI = tp*(tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n))
+        return PGI
     else:
-        raise NotImplementedError(f"Metric: '{metric}' is currently not implemented. Instead use one of 'information_gain', 'precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter' or 'RPG'.")
+        raise NotImplementedError(f"Metric: '{metric}' is currently not implemented. Instead use one of 'original, 'information_gain', 'precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'Gini_Impurity', 'Precision_Information_Gain', 'Precision_Gini_Impurity', 'TP_Information_Gain' or 'TP_Gini_Impurity'.")
         
 
-metric_list = ['information_gain', 'Precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG']
+metric_list = ['original','information_gain', 'Precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG', 'Gini_Impurity', 'Precision_Information_Gain', 'Precision_Gini_Impurity', 'TP_Information_Gain', 'TP_Gini_Impurity']
 
 def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
     debug=True
@@ -783,8 +835,32 @@ def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
                 print(f"New best split found, relation={r} {v=}, metric={ig}, tp={cp- pos[c]+xp}, fn={pos[c]}, tn={neg[c]}, fp={cn-neg[c] +xn}")
     return best, r, v
 
+def find_best_split_and_gain(X_pos, X_neg, used_items=[], **kwargs):
+    """
+    Finds the best single condition (item) to split the data and returns both the item and its gain.
+    """
+    best_item_tuple = -1, '', ''
+    if not X_pos and not X_neg:
+        return float('-inf'), best_item_tuple
+    
+    n = len(X_pos[0]) if X_pos else len(X_neg[0])
+    best_gain = float('-inf')
+
+    for i in range(n - 1):
+        ig, r, v = best_ig(X_pos, X_neg, i, used_items, **kwargs)
+        if best_gain < ig:
+            best_gain = ig
+            best_item_tuple = i, r, v
+            
+    return best_gain, best_item_tuple
 
 def best_item(X_pos, X_neg, used_items=[], **kwargs):
+    #Returns only the best item tuple (index, relation, value).
+    _, item_tuple = find_best_split_and_gain(X_pos, X_neg, used_items, **kwargs)
+    return item_tuple
+
+### Only returns the best column index, relation and value, not the actual information gain
+'''def best_item(X_pos, X_neg, used_items=[], **kwargs):
     ret = -1, '', ''
     if len(X_pos) == 0 and len(X_neg) == 0:
         return ret
@@ -795,7 +871,7 @@ def best_item(X_pos, X_neg, used_items=[], **kwargs):
         if best < ig:
             best = ig
             ret = i, r, v #column index, relation, value
-    return ret
+    return ret'''
 
 
 def most(data, i=-1):
@@ -847,16 +923,26 @@ def foldrm(data, ratio=0.5, provided_literal = False, selection_strategy='greedy
 
             
             elif selection_strategy == 'best_rule':
+                # Lookahead to see which class yields the best initial rule
                 best_class_label = None
                 best_class_gain = float('-inf')
+                
+                # Fallback in case no class produces a valid split
+                if unique_classes_in_data:
+                    best_class_label = unique_classes_in_data[0]
+    
                 for class_label in unique_classes_in_data:
                     temp_target = (-1, '==', class_label)
                     d_pos, d_neg = split_data_by_item(data, temp_target)
-                    ig, _, _ = best_item(d_pos, d_neg, [], **kwargs)
+                    
+                    # CORRECTED: Call the new function to get the actual gain
+                    ig, _ = find_best_split_and_gain(d_pos, d_neg, [], **kwargs)
+                    
                     if ig > best_class_gain:
                         best_class_gain = ig
                         best_class_label = class_label
                 target_class = (-1, '==', best_class_label)
+            
             elif selection_strategy == 'info_gain':
                 best_class_label = None
                 min_weighted_entropy = float('inf')
