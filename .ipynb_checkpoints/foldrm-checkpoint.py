@@ -42,7 +42,7 @@ class Classifier:
 
     def fit(self, data, ratio=0.5, selection_strategy='greedy', **kwargs):
         if self.rules == None:
-            self.rules = foldrm(data, ratio=ratio, selection_strategy=selection_strategy)
+            self.rules = foldrm(data, ratio=ratio, selection_strategy=selection_strategy, **kwargs)
         elif isinstance(self.rules, list) and len(self.rules)  == 0:
             self.rules = foldrm(data, ratio=ratio, selection_strategy=selection_strategy, **kwargs)
         else:

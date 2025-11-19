@@ -446,7 +446,7 @@ def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_thresho
 def confidence_fold(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, **kwargs):
     ret = []
     while len(data_pos) > 0:
-        rule = learn_confidence_rule(data_pos, data_neg, used_items, improvement_threshold, **kwargs)
+        rule = learn_confidence_rule(data_pos, data_neg, used_items, improvement_threshold, ratio, **kwargs)
 
         data_fn = [data_pos[i] for i in range(len(data_pos)) if not cover(rule, data_pos[i])]
         if len(data_fn) == len(data_pos):
