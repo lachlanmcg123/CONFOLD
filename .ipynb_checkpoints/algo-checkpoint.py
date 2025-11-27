@@ -680,7 +680,7 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
         ret += fp / tot_p * math.log(fp / tot_p) if fp > 0 else 0
         ret += tn / tot_n * math.log(tn / tot_n) if tn > 0 else 0
         ret += fn / tot_n * math.log(fn / tot_n) if fn > 0 else 0
-        return ret
+        return ret #Compared to original, rewards better classification on the smaller of pos/neg.
     if formula == 'Precision':
         if tp ==0:
             return float('-inf')
@@ -701,10 +701,6 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
         if tp ==0:
             return float('-inf')
         return float(tp)/(float(tp+fp)**2) - float(fp)/(float(tp+fp)**2)
-    #if formula == 'Gini_Impurity':
-    #    if tp ==0:
-    #        return float('-inf')
-    #    return float(tp)/(float(tp+fp)**2) + float(fp)/(float(tp+fp)**2) #As we are trying to maximise we have removed the 1-
     if formula == 'Positive_Coverage_Gain':
         w = positive_coverage_weight 
         if tp ==0:
@@ -735,13 +731,15 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
         RPG = float(tp)/float(tp+fp) - float(tp + fn)/float(tp+tn+fp+fn)
         return RPG
     if formula == 'Gini_Impurity':
+        if tp + tn < fp + fn:
+            return float('-inf')
         if tot_p==0 or tot_n==0:
-            return 0
-        Gini = tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n)
+            return float("-inf")
+        Gini = 1 - tp/tot_p*(1-tp/tot_p) - fp/tot_p*(1-fp/tot_p) - tn/tot_n*(1-tn/tot_n) - fn/tot_n*(1-fn/tot_n)
         return Gini
     if formula == 'Precision_Information_Gain':
         if tot_p==0 or tot_n==0:
-            return 0
+            return float('-inf')
         ret = 0
         ret += tp / tot_p * math.log(tp / tot_p) if tp > 0 else 0
         ret += fp / tot_p * math.log(fp / tot_p) if fp > 0 else 0
@@ -750,13 +748,15 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
         PIG = tp/(tp+fp)*(ret)
         return PIG
     if formula == 'Precision_Gini_Impurity':
+        if tp + tn < fp + fn:
+            return float('-inf')
         if tot_p==0 or tot_n==0:
-            return 0
-        PGI = tp/(tp+fp)*(tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n))
+            return float("-inf")
+        PGI = 1 - tp/(tp+fp)*(tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n))
         return PGI
     if formula == 'TP_Information_Gain':
         if tot_p==0 or tot_n==0:
-            return 0
+            return float('-inf')
         ret = 0
         ret += tp / tot_p * math.log(tp / tot_p) if tp > 0 else 0
         ret += fp / tot_p * math.log(fp / tot_p) if fp > 0 else 0
@@ -766,14 +766,128 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
         return PIG
     if formula == 'TP_Gini_Impurity':
         if tot_p==0 or tot_n==0:
-            return 0
+            return float('-inf')
         PGI = tp*(tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n))
         return PGI
+    if formula == 'original_guarded':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        if tp == 0:
+            return float('-inf')
+        ret = 0
+        ret += tp / tot * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / tot * math.log(fp / tot_p) if fp > 0 else 0
+        ret += tn / tot * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / tot * math.log(fn / tot_n) if fn > 0 else 0
+        return ret
+    if formula == 'original_reweighted':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        ret = 0
+        ret += tp / (tot_n+1) * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / (tot_n+1) * math.log(fp / tot_p) if fp > 0 else 0
+        ret += tn / (tot_p+1) * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / (tot_p+1) * math.log(fn / tot_n) if fn > 0 else 0
+        return ret
+    if formula == 'original_t_removed':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        ret = 0
+        #ret += tp / tot * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / tot * math.log(fp / tot_p) if fp > 0 else 0
+        #ret += tn / tot * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / tot * math.log(fn / tot_n) if fn > 0 else 0
+        return ret
+    if formula == 'IG_over_P':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        if tot_p==0 or tot_n==0:
+            return float('-inf')
+        if tp==0:
+            return float('-inf')
+        ret = 0
+        ret += tp / tot_p * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / tot_p * math.log(fp / tot_p) if fp > 0 else 0
+        ret += tn / tot_n * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / tot_n * math.log(fn / tot_n) if fn > 0 else 0
+        IG_on_P = ret/tp*(tp+fp)
+        return IG_on_P
+    if formula == 'IG_over_P2':
+        if tot_p==0 or tot_n==0:
+            return float('-inf')
+        if tp==0:
+            return float('-inf')
+        ret = 0
+        ret += tp / tot_p * math.log(tp / tot_p) if tp > 0 else 0
+        ret += fp / tot_p * math.log(fp / tot_p) if fp > 0 else 0
+        ret += tn / tot_n * math.log(tn / tot_n) if tn > 0 else 0
+        ret += fn / tot_n * math.log(fn / tot_n) if fn > 0 else 0
+        IG_on_P2 = ret/(tp*(tp+fp))**2
+        return IG_on_P2
+    if formula == 'LogOddsRatio':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        if tp==0:
+            return float('-inf')
+        LogOdds = math.log((tp+0.01)/(fp+0.01)/(fn+0.01)*(tn+0.01))
+        return LogOdds
+    if formula == 'MathewsCC':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        if tp==0:
+            return float('-inf')
+        if tn==0:
+            return 0
+        if tot_p==0 or tot_n==0:
+            return float('-inf')
+        MatthewsCC = (tp*tn-fp*fn)/(tot_p*tot_n*(tp+fn)*(tn+fp))**(1/2)
+        return MatthewsCC
+    if formula == 'MathewsCC_mod':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        if tp==0:
+            return float('-inf')
+        if tot_p==0:
+            return float('-inf')
+        MatthewsCC = (tp*(tn+1)-fp*fn)/(tot_p*(tot_n+1)*(tp+fn)*(tn+fp+1))**(1/2)
+        return MatthewsCC
+    if formula == 'MathewsP':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        if tp==0:
+            return float('-inf')
+        if tot_p==0:
+            return float('-inf')
+        MatthewsCC = (tp*(tn+1)-fp*fn)/(tot_p*(tot_n+1)*(tp+fn)*(tn+fp+1))**(1/2)
+        MatthewsP = MatthewsCC*tp/(tp+fp)
+        return MatthewsP
+    if formula == 'MathewsP2':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        if tp==0:
+            return float('-inf')
+        if tot_p==0:
+            return float('-inf')
+        MatthewsCC = (tp*(tn+1)-fp*fn)/(tot_p*(tot_n+1)*(tp+fn)*(tn+fp+1))**(1/2)
+        MatthewsP2 = MatthewsCC*(tp/(tp+fp))**2
+        return MatthewsP2
+    if formula == 'MathewsP3':
+        if tp + tn < fp + fn:
+            return float('-inf')
+        if tp==0:
+            return float('-inf')
+        if tot_p==0:
+            return float('-inf')
+        MatthewsCC = (tp*(tn+1)-fp*fn)/(tot_p*(tot_n+1)*(tp+fn)*(tn+fp+1))**(1/2)
+        MatthewsP3 = MatthewsCC*(tp/(tp+fp))**3
+        return MatthewsP3
     else:
-        raise NotImplementedError(f"Metric: '{metric}' is currently not implemented. Instead use one of 'original, 'information_gain', 'precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'Gini_Impurity', 'Precision_Information_Gain', 'Precision_Gini_Impurity', 'TP_Information_Gain' or 'TP_Gini_Impurity'.")
+        raise NotImplementedError(f"Metric: '{metric}' is currently not implemented. Instead use one of 'original, 'information_gain', 'precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'Gini_Impurity', 'Precision_Information_Gain', 'Precision_Gini_Impurity', 'TP_Information_Gain', 'TP_Gini_Impurity', 'original_guarded', 'original_reweighted', 'original_t_removed', 'IG_over_P', 'IG_over_P2', 'LogOddsRatio', 'MathewsCC', 'MathewsCC_mod', 'MathewsP', 'MathewsP2' or 'MathewsP3'.")
         
 
-metric_list = ['original','information_gain', 'Precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG', 'Gini_Impurity', 'Precision_Information_Gain', 'Precision_Gini_Impurity', 'TP_Information_Gain', 'TP_Gini_Impurity']
+
+
+metric_list = ['original','information_gain', 'Precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG', 'Gini_Impurity', 'Precision_Information_Gain', 'Precision_Gini_Impurity', 'TP_Information_Gain', 'TP_Gini_Impurity', 'original_guarded', 'original_reweighted', 'original_t_removed', 'IG_over_P', 'IG_over_P2', 'LogOddsRatio', 'MathewsCC', 'MathewsCC_mod', 'MathewsP', 'MathewsP2', 'MathewsP3']
 
 def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
     debug=True
