@@ -315,7 +315,7 @@ def get_unique_classes(data, i=-1):
 
 
 
-def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_literal = False, selection_strategy='greedy', **kwargs):
+def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_literal = False, selection_strategy='greedy', multiclass=False, **kwargs):
     ret = []
     class_order = []
     current_class_idx = 0
@@ -365,7 +365,7 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
                     d_pos, d_neg = split_data_by_item(data, temp_target)
                     
                     # CORRECTED: Call the new function to get the actual gain
-                    ig, _ = find_best_split_and_gain(d_pos, d_neg, [], **kwargs)
+                    ig, _ = find_best_split_and_gain(d_pos, d_neg, [], multiclass=multiclass, **kwargs)
                     
                     if ig > best_class_gain:
                         best_class_gain = ig
@@ -395,7 +395,7 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
 
         data_pos, data_neg = split_data_by_item(data, target_class)
         
-        rule = learn_confidence_rule(data_pos, data_neg, [], improvement_threshold, ratio, **kwargs)
+        rule = learn_confidence_rule(data_pos, data_neg, [], improvement_threshold, ratio, multiclass=multiclass, **kwargs)
      
         if len(rule[2]) >= 1:
             rule = evaluate_exceptions(rule, data_pos, data_neg, improvement_threshold)
@@ -416,11 +416,11 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
     
     return ret
 
-def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, **kwargs):
+def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, multiclass=False, **kwargs):
     items = []
     debug = True
     while True:
-        t = best_item(data_pos, data_neg, used_items + items, **kwargs)
+        t = best_item(data_pos, data_neg, used_items + items, multiclass=multiclass, **kwargs)
     
         items.append(t)
         rule = -1, items, [], 0
@@ -443,10 +443,10 @@ def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_thresho
     return rule
 
 
-def confidence_fold(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, **kwargs):
+def confidence_fold(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, multiclass=False, **kwargs):
     ret = []
     while len(data_pos) > 0:
-        rule = learn_confidence_rule(data_pos, data_neg, used_items, improvement_threshold, ratio, **kwargs)
+        rule = learn_confidence_rule(data_pos, data_neg, used_items, improvement_threshold, ratio, multiclass=multiclass, **kwargs)
 
         data_fn = [data_pos[i] for i in range(len(data_pos)) if not cover(rule, data_pos[i])]
         if len(data_fn) == len(data_pos):
@@ -735,9 +735,13 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
             return float('-inf')
         if tot_p==0 or tot_n==0:
             return float("-inf")
-        Gini = 1 - tp/tot_p*(1-tp/tot_p) - fp/tot_p*(1-fp/tot_p) - tn/tot_n*(1-tn/tot_n) - fn/tot_n*(1-fn/tot_n)
+        if tp==0:
+            return float('-inf')
+        Gini = - tp/tot_p*(1-tp/tot_p) - fp/tot_p*(1-fp/tot_p) - tn/tot_n*(1-tn/tot_n) - fn/tot_n*(1-fn/tot_n)
         return Gini
-    if formula == 'Precision_Information_Gain':
+    if formula == 'Precision_Information_Gain': ### Very bad idea!!!!
+        if tp + tn < fp + fn:
+            return float('-inf')
         if tot_p==0 or tot_n==0:
             return float('-inf')
         ret = 0
@@ -752,9 +756,11 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
             return float('-inf')
         if tot_p==0 or tot_n==0:
             return float("-inf")
-        PGI = 1 - tp/(tp+fp)*(tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n))
+        if tp==0:
+            return float('-inf')
+        PGI = (- (tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n)))/(tp/(tp+fp))
         return PGI
-    if formula == 'TP_Information_Gain':
+    if formula == 'TP_Information_Gain': ### !!! Also very bad idea!!
         if tot_p==0 or tot_n==0:
             return float('-inf')
         ret = 0
@@ -766,6 +772,8 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
         return PIG
     if formula == 'TP_Gini_Impurity':
         if tot_p==0 or tot_n==0:
+            return float('-inf')
+        if tp==0:
             return float('-inf')
         PGI = tp*(tp/tot_p*(1-tp/tot_p) + fp/tot_p*(1-fp/tot_p) + tn/tot_n*(1-tn/tot_n) + fn/tot_n*(1-fn/tot_n))
         return PGI
@@ -813,6 +821,8 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
         IG_on_P = ret/tp*(tp+fp)
         return IG_on_P
     if formula == 'IG_over_P2':
+        if tp + tn < fp + fn:
+            return float('-inf')
         if tot_p==0 or tot_n==0:
             return float('-inf')
         if tp==0:
@@ -949,7 +959,7 @@ def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
                 print(f"New best split found, relation={r} {v=}, metric={ig}, tp={cp- pos[c]+xp}, fn={pos[c]}, tn={neg[c]}, fp={cn-neg[c] +xn}")
     return best, r, v
 
-def find_best_split_and_gain(X_pos, X_neg, used_items=[], **kwargs):
+def find_best_split_and_gain(X_pos, X_neg, used_items=[], multiclass=False, label_index=-1, **kwargs):
     """
     Finds the best single condition (item) to split the data and returns both the item and its gain.
     """
@@ -959,34 +969,25 @@ def find_best_split_and_gain(X_pos, X_neg, used_items=[], **kwargs):
     
     n = len(X_pos[0]) if X_pos else len(X_neg[0])
     best_gain = float('-inf')
-
+    
     for i in range(n - 1):
-        ig, r, v = best_ig(X_pos, X_neg, i, used_items, **kwargs)
-        if best_gain < ig:
-            best_gain = ig
-            best_item_tuple = i, r, v
-            
+        if multiclass==True:
+            ig, r, v = best_ig_multiclass(X_pos, X_neg, i, used_items, label_index, **kwargs)
+            if best_gain < ig:
+                best_gain = ig
+                best_item_tuple = i, r, v
+        else:
+            ig, r, v = best_ig(X_pos, X_neg, i, used_items, **kwargs)
+            if best_gain < ig:
+                best_gain = ig
+                best_item_tuple = i, r, v
+                
     return best_gain, best_item_tuple
 
-def best_item(X_pos, X_neg, used_items=[], **kwargs):
+def best_item(X_pos, X_neg, used_items=[], multiclass=False, **kwargs):
     #Returns only the best item tuple (index, relation, value).
-    _, item_tuple = find_best_split_and_gain(X_pos, X_neg, used_items, **kwargs)
+    _, item_tuple = find_best_split_and_gain(X_pos, X_neg, used_items, multiclass=multiclass, **kwargs)
     return item_tuple
-
-### Only returns the best column index, relation and value, not the actual information gain
-'''def best_item(X_pos, X_neg, used_items=[], **kwargs):
-    ret = -1, '', ''
-    if len(X_pos) == 0 and len(X_neg) == 0:
-        return ret
-    n = len(X_pos[0]) if len(X_pos) > 0 else len(X_neg[0])
-    best = float('-inf')
-    for i in range(n - 1):
-        ig, r, v = best_ig(X_pos, X_neg, i, used_items, **kwargs)
-        if best < ig:
-            best = ig
-            ret = i, r, v #column index, relation, value
-    return ret'''
-
 
 def most(data, i=-1):
     tab = dict()
@@ -1000,7 +1001,7 @@ def most(data, i=-1):
             y, n = t, tab[t]
     return i, '==', y #returns  -1 '==' most common label
 
-def foldrm(data, ratio=0.5, provided_literal = False, selection_strategy='greedy', **kwargs):
+def foldrm(data, ratio=0.5, provided_literal = False, selection_strategy='greedy', multiclass=False, **kwargs):
     debug = False
     class_order = []
     current_class_idx = 0
@@ -1050,7 +1051,7 @@ def foldrm(data, ratio=0.5, provided_literal = False, selection_strategy='greedy
                     d_pos, d_neg = split_data_by_item(data, temp_target)
                     
                     # CORRECTED: Call the new function to get the actual gain
-                    ig, _ = find_best_split_and_gain(d_pos, d_neg, [], **kwargs)
+                    ig, _ = find_best_split_and_gain(d_pos, d_neg, [], multiclass=multiclass, **kwargs)
                     
                     if ig > best_class_gain:
                         best_class_gain = ig
@@ -1076,7 +1077,7 @@ def foldrm(data, ratio=0.5, provided_literal = False, selection_strategy='greedy
 
         
         data_pos, data_neg = split_data_by_item(data, target_class) #Splits data into positive and negative examples according to chosen class
-        rule = learn_rule(data_pos, data_neg, [], ratio, **kwargs)
+        rule = learn_rule(data_pos, data_neg, [], ratio, multiclass=multiclass, **kwargs)
         # Calculate confidence here
         tp = len([d for d in data_pos if cover(rule, d)])  # True positives
         total = tp + len([d for d in data_neg if cover(rule, d)])  # Total = TP + FP
@@ -1093,11 +1094,11 @@ def foldrm(data, ratio=0.5, provided_literal = False, selection_strategy='greedy
             print(f"\n\n The new rule found is: {rule_with_confidence} \n\n")
     return ret
 
-def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5, **kwargs):
+def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5, multiclass=False, **kwargs):
     debug = True
     items = []
     while True:
-        t = best_item(data_pos, data_neg, used_items + items, **kwargs)
+        t = best_item(data_pos, data_neg, used_items + items, multiclass=multiclass, **kwargs)
         items.append(t)
         rule = -1, items, [], 0
         data_pos = [data_pos[i] for i in range(len(data_pos)) if cover(rule, data_pos[i])]
@@ -1115,10 +1116,10 @@ def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5, **kwargs):
     return rule
 
 
-def fold(data_pos, data_neg, used_items=[], ratio=0.5, **kwargs):
+def fold(data_pos, data_neg, used_items=[], ratio=0.5, multiclass=False, **kwargs):
     ret = []
     while len(data_pos) > 0:
-        rule = learn_rule(data_pos, data_neg, used_items, ratio, **kwargs)
+        rule = learn_rule(data_pos, data_neg, used_items, ratio, multiclass=multiclass, **kwargs)
         data_fn = [data_pos[i] for i in range(len(data_pos)) if not cover(rule, data_pos[i])]
         if len(data_fn) == len(data_pos):
             break
@@ -1203,4 +1204,152 @@ def justify(rs, x, idx=-1, pos=[]):
         return None, -1
     else:
         return 0, -1
+
+def calc_entropy(counts, total_count):
+    """
+    Helper to calculate Shannon entropy for a dictionary of counts.
+    counts: dict {label: count}
+    total_count: int (sum of values in counts)
+    """
+    if total_count == 0:
+        return 0.0
+    entropy = 0.0
+    for label in counts:
+        count = counts[label]
+        if count > 0:
+            p = count / total_count
+            entropy -= p * math.log2(p)
+    return entropy
+
+def gain_multiclass_ratio(left_counts, right_counts, target_label):
+    """
+    Calculates: -Weighted_Child_Entropy / Precision
+    Maximizing this value minimizes entropy while penalizing low precision.
+    """
+    total_left = sum(left_counts.values())
+    total_right = sum(right_counts.values())
+    total_parent = total_left + total_right
+
+    # If a split results in an empty child, it's invalid/useless
+    if total_left == 0 or total_right == 0:
+        return float('-inf')
+
+    # 1. Calculate Precision of the Target Class in the 'Left' (Covered) Branch
+    target_count_left = left_counts.get(target_label, 0)
+    
+    if target_count_left == 0:
+        return float('-inf') # Precision is 0, avoid division by zero
+        
+    precision = target_count_left / total_left
+
+    # 2. Calculate Weighted Child Entropy
+    entropy_left = calc_entropy(left_counts, total_left)
+    entropy_right = calc_entropy(right_counts, total_right)
+
+    weighted_child_entropy = (total_left / total_parent) * entropy_left + \
+                             (total_right / total_parent) * entropy_right
+    
+    # 3. Return Ratio (Negative Entropy / Precision)
+    # If entropy is 0 (perfect), result is 0 (max possible).
+    # If entropy is high and precision is low, result is a large negative number.
+    return -weighted_child_entropy / precision
+
+def best_ig_multiclass(data_pos, data_neg, i, used_items=[], label_index=-1, **kwargs):
+    # 1. Identify the Target Label
+    if not data_pos:
+        return float('-inf'), '', ''
+    
+    target_label = data_pos[0][label_index]
+
+    # 2. Build Initial Counts (We still need total counts to initialize the sliding window)
+    # We treat 'right_counts' as the container for all data initially.
+    right_counts = {}
+    values = []
+    
+    def add_count(dct, label):
+        dct[label] = dct.get(label, 0) + 1
+
+    for d in data_pos:
+        lbl = d[label_index]
+        val = d[i]
+        add_count(right_counts, lbl)
+        values.append((val, lbl))
+        
+    for d in data_neg:
+        lbl = d[label_index]
+        val = d[i]
+        add_count(right_counts, lbl)
+        values.append((val, lbl))
+
+    if not values:
+        return float('-inf'), '', ''
+        
+    is_numeric = not isinstance(values[0][0], str)
+    
+    best_score = float('-inf')
+    best_rel = ''
+    best_val = ''
+
+    if is_numeric:
+        # --- NUMERIC LOGIC ---
+        values.sort(key=lambda x: x[0])
+        
+        left_counts = {}
+        # right_counts is already populated with everything
+        
+        for j in range(len(values) - 1):
+            val, label = values[j]
+            next_val = values[j+1][0]
+            
+            # Move from Right to Left
+            right_counts[label] -= 1
+            if right_counts[label] == 0: del right_counts[label]
+            left_counts[label] = left_counts.get(label, 0) + 1
+            
+            if val != next_val:
+                if (i, '<=', val) in used_items or (i, '>', val) in used_items:
+                    continue
+
+                # CALL THE NEW RATIO METRIC
+                score = gain_multiclass_ratio(left_counts, right_counts, target_label)
+                
+                if score > best_score:
+                    best_score = score
+                    best_val = val
+                    best_rel = '<='
+
+    else:
+        # --- NOMINAL LOGIC ---
+        unique_vals = set(v[0] for v in values)
+        
+        # For nominal, we can't use the sliding window trick as easily for the 'right' side
+        # without rebuilding, but since we iterate unique values, it's okay.
+        
+        # We need a clean copy of total counts to derive right_counts easily
+        total_counts = right_counts.copy() 
+
+        for u_val in unique_vals:
+            if (i, '==', u_val) in used_items or (i, '!=', u_val) in used_items:
+                continue
+
+            left_counts = {}
+            right_counts = total_counts.copy()
+            
+            # We must iterate the data to split it for nominal
+            # (Optimization: You could pre-index this, but this is standard FOLD logic)
+            for val, label in values:
+                if val == u_val:
+                    add_count(left_counts, label)
+                    right_counts[label] -= 1
+                    if right_counts[label] == 0: del right_counts[label]
+            
+            # CALL THE NEW RATIO METRIC
+            score = gain_multiclass_ratio(left_counts, right_counts, target_label)
+            
+            if score > best_score:
+                best_score = score
+                best_val = u_val
+                best_rel = '=='
+
+    return best_score, best_rel, best_val
 
