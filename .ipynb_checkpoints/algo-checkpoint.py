@@ -418,7 +418,7 @@ def confidence_foldrm(data, improvement_threshold=0.02, ratio=0.5, provided_lite
 
 def learn_confidence_rule(data_pos, data_neg, used_items=[], improvement_threshold=0.02, ratio = 0.5, multiclass=False, **kwargs):
     items = []
-    debug = True
+    debug = False
     while True:
         t = best_item(data_pos, data_neg, used_items + items, multiclass=multiclass, **kwargs)
     
@@ -900,7 +900,7 @@ def gain(tp, fn, tn, fp, metric='original', num_classes=2, positive_coverage_wei
 metric_list = ['original','information_gain', 'Precision', 'F1', 'Jaccard', 'Laplace', 'Gini_Impurity_Covered', 'Positive_Coverage_Gain', 'YoudensJ', 'Weighted_Harmonic_Mean', 'Binomial_Parameter', 'RPG', 'Gini_Impurity', 'Precision_Information_Gain', 'Precision_Gini_Impurity', 'TP_Information_Gain', 'TP_Gini_Impurity', 'original_guarded', 'original_reweighted', 'original_t_removed', 'IG_over_P', 'IG_over_P2', 'LogOddsRatio', 'MathewsCC', 'MathewsCC_mod', 'MathewsP', 'MathewsP2', 'MathewsP3']
 
 def best_ig(data_pos, data_neg, i, used_items=[], **kwargs):
-    debug=True
+    debug=False
     xp, xn, cp, cn = 0, 0, 0, 0
     pos, neg = dict(), dict()
     xs, cs = set(), set()
@@ -1095,7 +1095,7 @@ def foldrm(data, ratio=0.5, provided_literal = False, selection_strategy='greedy
     return ret
 
 def learn_rule(data_pos, data_neg, used_items=[], ratio=0.5, multiclass=False, **kwargs):
-    debug = True
+    debug = False
     items = []
     while True:
         t = best_item(data_pos, data_neg, used_items + items, multiclass=multiclass, **kwargs)
