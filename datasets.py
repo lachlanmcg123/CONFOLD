@@ -1,6 +1,14 @@
 from foldrm import Classifier
 import numpy as np
 
+def annaburroo():
+    attrs = ['10mWind.ms', 'Temp.C', 'RH.%', 'EffHFWidth.m']
+    nums = ['10mWind.ms', 'Temp.C', 'RH.%', 'EffHFWidth.m']
+    model = Classifier(attrs=attrs, numeric=nums, label='Quartile')
+    data = model.load_data('data/annaburroo/Annaburroo_Data_For_Experiments.csv')    
+    print('\n% annaburroo dataset', np.shape(data))
+    return model, data
+
 def birds(data_path='data/birds/birds.csv'): 
     attrs = ['wingspan', 'beak']
     nums = ['wingspan']

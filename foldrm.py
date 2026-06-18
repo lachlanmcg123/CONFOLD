@@ -27,8 +27,8 @@ class Classifier:
         if self.rules == None:
             self.rules = []
         if instructions:
-            print(f"\#\#\#\#\# Instructions \#\#\#\#\#")
-            print(f"Manually defined rules should take the following form: \n (with confidence \#) class = 'label' if 'attribute name/index' 'symbol' 'value' ")
+            print(f"------ Instructions -----")
+            print(f"Manually defined rules should take the following form: \n (with confidence) class = 'label' if 'attribute name/index' 'symbol' 'value' ")
             print(f"You can then include additional conditions using 'except if', 'and' or 'or'.")
             print(f"If you wish to use FOLD_Syntax which is useful for people who know it or for copying and pasting rules set FOLD_Syntax = True.")
             print(f"Example Rule 1: with confidence 0.99  class = '0.5' if 'correct_number' '>=' '1' and 'incorrect_unit' '>=' '1' or 'correct_unit' '<=' '0'")
